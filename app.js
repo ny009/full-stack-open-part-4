@@ -7,8 +7,8 @@ const blogsRouter = require('./controllers/blogs')
 const mongoose = require('mongoose')
 
 mongoose.connect(config.MONGO_URI)
-  .then(() => logger.info('Successfully connected to MONGODB'))
-  .catch(err => logger.error('Error connecting to MONGO', err))
+  .then(() => logger.info('Successfully connected to MONGO DB'))
+  .catch(err => logger.error('Error connecting to MONGO DB', err))
 
 const app = express()
 app.use(cors())
