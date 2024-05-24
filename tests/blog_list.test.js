@@ -85,4 +85,33 @@ describe('Testing POST', () => {
     assert.strictEqual(res.body.Error, 'Bad Request')
   })
 })
+
+describe('Testing Delete', () => {
+  test ('Succeeds with a 204 if valid', async () => {
+    const blogs = await blogHelper.blogsInDb()
+    const blogToDelete = blogs[0]
+
+    await api.delete(`/api/blogs/${blogToDelete.id}`).expect(204)
+    
+    const blogsAfter = await blogHelper.blogsInDb()
+    assert.strictEqual(blogsAfter.length, blogHelper.initialBlogs.length - 1)
+
+    const blogTitles = blogsAfter.map(blog => blog.title)
+    assert(!blogTitles.includes(blogToDelete.title))
+  })
+})
+
+describe('Testing PUT', () => {
+  test ('Succeeds with 200 OK if valid and matches new number of likes', async () => {
+    const blogs = await blogHelper.blogsInDb()
+    const blogToUpdate = blogs[0]
+
+    await api.put(`/api/blogs/${blogToUpdate.id}`)
+      .send({likes : 100})
+      .expect(200)
+
+    const blogsAfter = await blogHelper.blogsInDb()
+    assert.strictEqual(blogsAfter[0].likes, 100)
+  })
+})
 after(async () => await mongoose.connection.close())
