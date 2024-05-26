@@ -3,13 +3,14 @@ const blogsRouter = require('express').Router()
 const Blog = require('../models/blog')
 const User = require('../models/user')
 const config  = require('../utils/config')
+const middleware = require('../utils/middleware')
 
 blogsRouter.get('/', async (request, response) => {
   const blogs = await Blog.find({}).populate('user', { username: 1, name: 1 })
   return response.json(blogs)
 })
 
-blogsRouter.post('/', async (request, response) => {
+blogsRouter.post('/', middleware.userExtractor, async (request, response) => {
   const { title, author, likes, url, userId } = request.body
   if (!title || !url) {
     return response.status(400).json({
@@ -17,12 +18,11 @@ blogsRouter.post('/', async (request, response) => {
     })
   }
 
-  const decodedToken = jwt.verify(request.token, config.SECRET)
-  if (!decodedToken.id) {
-    return res.status(401).json({ error: 'Invalid Token' })
-  }
-  const  user = await User.findById(decodedToken.id)
+  const user = request.user
 
+  if (user.id.toString() !== userId.toString()) {
+    return response.status(401).json({ error: 'Mismatched token' })
+  }
   const blog = new Blog({title, author, url, likes, user: userId})
 
   const result = await blog.save()
@@ -31,7 +31,11 @@ blogsRouter.post('/', async (request, response) => {
   response.status(201).json(result)
 })
 
-blogsRouter.delete('/:id', async (request, response) => {
+blogsRouter.delete('/:id',  middleware.userExtractor, async (request, response) => {
+  const blog = await Blog.findById(request.params.id)
+  if (request.user.id.toString() !== blog.user.toString()) {
+    return response.status(401).json({ error: 'Mismatched token' })
+  }
   await Blog.findByIdAndDelete(request.params.id)
   response.status(204).end()
 })
