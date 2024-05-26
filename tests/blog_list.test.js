@@ -1,19 +1,32 @@
 const app = require('../app')
 const Blog = require('../models/blog')
+const User = require('../models/user')
 const assert = require('node:assert')
 const {describe, test, beforeEach, after} = require('node:test')
-const blogHelper = require('./blog_list_helper')
+const blogHelper = require('./test_helper')
 const supertest = require('supertest')
 const mongoose = require('mongoose')
+const bcrypt = require('bcrypt')
+const jwt = require('jsonwebtoken')
 
 const api = supertest(app)
-
+let token
 beforeEach(async () => {
+  await User.deleteMany({})
+  const passwordHash = await bcrypt.hash('password', 10)
+  const user = new User({ username: 'nehal', name: 'nehal', passwordHash})
+  await user.save()
+
+  const userForToken = {
+    username: user.username,
+    id: user.id,
+  }
+  token = jwt.sign(userForToken, process.env.SECRET)
+
   await Blog.deleteMany({})
-  let blogObj = new Blog(blogHelper.initialBlogs[0])
-  await blogObj.save()
-  blogObj = new Blog(blogHelper.initialBlogs[1])
-  await blogObj.save()
+  const blogObjs = blogHelper.initialBlogs.map(blog => new Blog({...blog, user: user.id}))
+  const promiseArr = blogObjs.map(b => b.save())
+  await Promise.all(promiseArr)
 })
 
 describe('Testing GET', () => {
@@ -36,15 +49,19 @@ describe('Testing GET', () => {
 
 describe('Testing POST', () => {
   test('Checking if a POST request creates a new blog post', async () => {
+    const userId = jwt.verify(token, process.env.SECRET).id
     const newBlog = {
       title: "Nehal Test 3",
       author: "Nehal",
       url: "asd@asd.com",
-      likes: 4
+      likes: 4,
+      userId,
     }
+
     await api
       .post('/api/blogs')
       .send(newBlog)
+      .set('Authorization', `Bearer ${token}`)
       .expect(201)
       .expect('Content-Type', /application\/json/)
 
@@ -54,17 +71,32 @@ describe('Testing POST', () => {
     const titles = newBlogs.map(b => b.title)
     assert(titles.includes("Nehal Test 3"))
   })
+  test('POST fails with 401 if token is not correct', async () => {
+    const newBlog = {
+      title: "Nehal Test 3",
+      author: "Nehal",
+      url: "asd@asd.com",
+      likes: 4,
+    }
+    await api
+      .post('/api/blogs')
+      .send(newBlog)
+      .expect(401)
+  })
 
   test('Checking if likes, if missing, default to 0', async () => {
+    const userId = jwt.verify(token, process.env.SECRET).id
     const noLikesBlog = {
       title: "No Likes on This one",
       author: "Not important",
-      url: "do-not-open.com"
+      url: "do-not-open.com",
+      userId,
     }
 
     await api
       .post('/api/blogs')
       .send(noLikesBlog)
+      .set('Authorization', `Bearer ${token}`)
     
     const newBlogs = await blogHelper.blogsInDb()
     const noLikesInDb = newBlogs.find(blog => blog.title === "No Likes on This one")
@@ -81,6 +113,7 @@ describe('Testing POST', () => {
     const res = await api
       .post('/api/blogs')
       .send(noTitleBlog)
+      .set('Authorization', `Bearer ${token}`)
       .expect(400)
     assert.strictEqual(res.body.Error, 'Bad Request')
   })
@@ -91,13 +124,24 @@ describe('Testing Delete', () => {
     const blogs = await blogHelper.blogsInDb()
     const blogToDelete = blogs[0]
 
-    await api.delete(`/api/blogs/${blogToDelete.id}`).expect(204)
+    await api
+      .delete(`/api/blogs/${blogToDelete.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(204)
     
     const blogsAfter = await blogHelper.blogsInDb()
     assert.strictEqual(blogsAfter.length, blogHelper.initialBlogs.length - 1)
 
     const blogTitles = blogsAfter.map(blog => blog.title)
     assert(!blogTitles.includes(blogToDelete.title))
+  })
+  test('DELETE fails with 401 if token is not correct', async () => {
+    const blogs = await blogHelper.blogsInDb()
+    const blogToDelete = blogs[0]
+
+    await api
+      .delete(`/api/blogs/${blogToDelete.id}`)
+      .expect(401)
   })
 })
 
